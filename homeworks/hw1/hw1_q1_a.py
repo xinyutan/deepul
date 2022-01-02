@@ -1,27 +1,49 @@
 """
 Implementations of functions for q1_a in hw1_notebook.ipynb
 """
+import tensorflow as tf
 import numpy as np
 
-class Hyperparameters(object):
-  def __init__(self, epochs=20, learning_rate=0.01, batch_size=100):
-    self.epochs = epochs
-    self.learning_rate = learning_rate
-    self.batch_size = batch_size
-    
-    # update after the training
-    self.train_loss = float("inf")
-    self.test_loss = float("inf")]
+hp = {"learning_rate": 1, "batch_size": 128, "epochs": 20}
 
-class Dataset(object):
-  pass
+class Histogram(tf.Module):
+  def __init__(self, d):
+    self.d = d
+    self.logits = tf.Variable(np.zeros(d), dtype=tf.float32)
+  
+  def loss(self, x):
+    logits = tf.repeat(self.logits[tf.newaxis, :], x.shape[0], axis=0)
+    return tf.math.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+      labels=x, logits=logits))
+  
+  def distribution(self):
+    return tf.nn.softmax(self.logits)
 
-def get_loss(data, theta):
-  pass
+def train_step(model, x):
+  with tf.GradientTape() as t:
+    loss = model.loss(x)
+  grad = t.gradient(loss, model.logits)
+  model.logits.assign_sub(hp["learning_rate"] * grad)
+  return loss.numpy()
 
 
-def train_step(batch_data, theta, hp_object):
-  pass 
+def train(model, data):
+  dataset = tf.data.Dataset.from_tensor_slices(data).shuffle().batch(hp["batch_size"])
+  losses = []
+  for x in dataset:
+    l = train_step(model, x)
+    losses.append(l)
+  return losses
+
+
+def eval_loss(model, data):
+  dataset = tf.data.Dataset.from_tensor_slices(data).batch(hp["batch_size"])
+  total_loss = 0.0
+  for x in dataset:
+    total_loss += model.loss(x).numpy() * len(x)
+  
+  return total_loss / len(data)
+
 
 def q1_a(train_data, test_data, d, dset_id):
   """
@@ -44,23 +66,14 @@ def q1_a(train_data, test_data, d, dset_id):
     d = 100
   else:
     raise Exception(f"Invalid dset_type {dset_id}.")
-  
-  theta = np.zeros(d)
-
-  hp = Hyperparameters()
-  train_loss = np.zeros(hp.epochs)
-  test_loss = np.zeros(hp.epochs + 1)
-  test_loss[0] = get_loss(test_data, theta)
-  dataset = Dataset(train_data, shuffle=True)
-
-  for epoch in range(hp.epochs):
-    minibatch = next(dataset)
-    theta = train_step(minibatch, theta, hp)
-    train_loss[epoch] = get_loss(minibatch, theta)
-    test_loss[epoch + 1] = get_loss(test_data, theta)
-  prob_hat = np.exp(np.arange(d) * theta)
-  
-  return train_loss, test_loss, prob_hat / np.sum(prob_hat)
     
-    
+  model = Histogram(d)
+  train_losses, test_losses = [], []
+
+  test_losses.append(eval_loss(model, test_data))
+  for _ in range(hp["epochs"]):
+    train_losses.extend(train(model, train_data))
+    test_losses.append(eval_loss(model, test_data))
+
+  return train_losses, test_losses, model.distribution().numpy()
 
